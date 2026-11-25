@@ -1,4 +1,5 @@
 [versions]
+nearby = "19.5.1"
 agp = "9.5.2"
 coreKtx = "1.19.1"
 junit = "4.13.2"
@@ -6,12 +7,13 @@ junitVersion = "1.3.0"
 espressoCore = "3.7.0"
 lifecycleRuntimeKtx = "2.6.1"
 activityCompose = "1.13.0"
-kotlin = "2.2.10"
+kotlin = "2.4.20"
 composeBom = "2026.02.01"
 
 navigationCompose = "2.9.8"
 
 [libraries]
+google-nearby = { group = "com.google.android.gms", name = "play-services-nearby", version.ref = "nearby" }
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
