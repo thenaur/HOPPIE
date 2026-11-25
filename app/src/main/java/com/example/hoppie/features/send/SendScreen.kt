@@ -1,108 +1,164 @@
 package com.example.hoppie.features.send
 
-import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.hoppie.R
 import com.example.hoppie.core.components.FileTransferBackground
+import com.example.hoppie.core.components.HoppieNotice
+import com.example.hoppie.core.components.HoppieNotificationCard
+import com.example.hoppie.core.components.TransferHeader
 import com.example.hoppie.core.theme.HoppiePurple
+import com.example.hoppie.data.nearby.Phase
+import com.example.hoppie.data.nearby.SessionState
+import com.example.hoppie.features.send.components.IncomingConnectionDialog
+import com.example.hoppie.features.send.components.NearbyConnectionDialog
 import com.example.hoppie.features.send.components.SendButton
 import com.example.hoppie.features.send.components.SelectedFilesSummary
 import com.example.hoppie.features.send.components.selectedFilesSection
 import com.example.hoppie.features.send.components.UploadFilesCard
 
 @Composable
-internal fun SendScreen(onBack: () -> Unit, model: SendViewModel = viewModel()) {
+internal fun SendScreen(
+    onBack: () -> Unit,
+    model: SendViewModel = viewModel(),
+    onTransferDone: () -> Unit = onBack,
+    onAdvertise: (() -> Unit)? = null,
+    session: SessionState? = null,
+    onStopSharing: () -> Unit = {},
+    onDecision: (SessionState, Boolean) -> Unit = { _, _ -> },
+    onOpenTransfers: (() -> Unit)? = null,
+    idleNotice: HoppieNotice? = null,
+    onDismissNotice: () -> Unit = {}
+) {
     val state by model.state.collectAsStateWithLifecycle()
-    val context = LocalContext.current
+    val dismissAllNotices = {
+        onDismissNotice()
+        model.clearConnectionNotice()
+    }
+
+    var exitingCompletion by remember { mutableStateOf<FileTransferState?>(null) }
+    val activeOrCompleted = state.transfer
+    val completedSnapshot = activeOrCompleted?.takeIf { it.status == TransferStatus.Completed }
+        ?: exitingCompletion.takeIf { activeOrCompleted == null }
+
+    if (completedSnapshot != null) {
+        TransferringFilesScreen(
+            completedSnapshot,
+            onCancel = model::cancelTransfer,
+            onDone = {
+                if (exitingCompletion == null && model.finishCompletedTransfer()) {
+                    exitingCompletion = completedSnapshot
+                    dismissAllNotices()
+                    onTransferDone()
+                }
+            },
+            onOpenTransfers = onOpenTransfers
+        )
+        return
+    }
+
+    activeOrCompleted?.let { transfer ->
+        TransferringFilesScreen(transfer, model::cancelTransfer, {
+            model.closeTransfer()
+            onStopSharing()
+        }, onOpenTransfers = onOpenTransfers)
+        return
+    }
+
+    if (session != null) {
+        BackHandler(onBack = onStopSharing)
+        SendingFilesScreen(state, session, onStopSharing)
+        if (session.phase == Phase.Verify) NearbyConnectionDialog(session, onDecision)
+        return
+    }
+
+    if (state.waitingForReceiver) {
+        AlertDialog(
+            onDismissRequest = model::stopWaitingForReceiver,
+            title = { Text("Waiting for receiver") },
+            text = { Text("The receiver needs to review and accept the files before sharing begins.") },
+            confirmButton = {
+                TextButton(onClick = model::stopWaitingForReceiver) { Text("Stop waiting", color = HoppiePurple) }
+            },
+            containerColor = Color.White,
+            titleContentColor = HoppiePurple,
+            textContentColor = HoppiePurple
+        )
+    }
+
+    state.incomingConnection?.let { incoming ->
+        IncomingConnectionDialog(incoming, model::acceptIncomingConnection, model::declineIncomingConnection)
+    }
+
+    val activeNotice = idleNotice ?: state.connectionNotice
 
     Surface(modifier = Modifier.fillMaxSize(), color = Color.White, contentColor = HoppiePurple) {
         FileTransferBackground {
-            LazyColumn(
-                modifier = Modifier.widthIn(max = 560.dp).fillMaxSize(),
-                contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp),
-                verticalArrangement = SendContentArrangement
-            ) {
-                item(key = "header") { SendHeader(onBack) }
-                item(key = "upload") {
-                    UploadFilesCard(
-                        enabled = !state.isCheckingFiles,
-                        onFilesPicked = model::addFiles,
-                        modifier = Modifier.padding(horizontal = 24.dp).padding(top = 28.dp, bottom = 24.dp)
+            Column(modifier = Modifier.widthIn(max = 560.dp).fillMaxSize()) {
+                TransferHeader(
+                    onBack = {
+                        dismissAllNotices()
+                        onBack()
+                    },
+                    title = "Send Files",
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+                activeNotice?.let { notice ->
+                    HoppieNotificationCard(
+                        notice = notice,
+                        onDismiss = dismissAllNotices,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp)
                     )
                 }
-                selectedFilesSection(state, model::removeFile)
-                item(key = "actions") {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 24.dp).padding(top = 28.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        SelectedFilesSummary(state.files.size, state.totalBytes)
-                        SendButton(enabled = state.files.isNotEmpty()) {
-                            Toast.makeText(
-                                context,
-                                "File transfer will be available once Nearby Connections is implemented.",
-                                Toast.LENGTH_LONG
-                            ).show()
+                LazyColumn(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentPadding = PaddingValues(bottom = 16.dp),
+                    verticalArrangement = SendContentArrangement
+                ) {
+                    item(key = "upload") {
+                        UploadFilesCard(
+                            enabled = !state.isCheckingFiles,
+                            onFilesPicked = model::addFiles,
+                            modifier = Modifier.padding(horizontal = 24.dp)
+                                .padding(top = if (activeNotice == null) 28.dp else 16.dp, bottom = 24.dp)
+                        )
+                    }
+                    selectedFilesSection(state, model::removeFile)
+                    item(key = "actions") {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 24.dp).padding(top = 28.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            SelectedFilesSummary(state.files.size, state.totalBytes)
+                            SendButton(enabled = state.files.isNotEmpty() && !state.isCheckingFiles && onAdvertise != null) {
+                                dismissAllNotices()
+                                onAdvertise?.invoke()
+                            }
                         }
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun SendHeader(onBack: () -> Unit) {
-    Box(
-        Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 8.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = "Send Files",
-            modifier = Modifier.padding(horizontal = 52.dp, vertical = 6.dp).semantics { heading() },
-            style = MaterialTheme.typography.headlineSmall,
-            color = HoppiePurple,
-            textAlign = TextAlign.Center
-        )
-        IconButton(
-            onClick = onBack,
-            modifier = Modifier.align(Alignment.CenterStart).size(48.dp)
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.send_back_arrow),
-                contentDescription = "Back",
-                modifier = Modifier.size(26.dp),
-                tint = HoppiePurple
-            )
         }
     }
 }
