@@ -24,6 +24,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.hoppie.R
+import com.example.hoppie.core.navigation.LocalSuppressReopen
 import com.example.hoppie.core.theme.HoppiePurple
 
 @Composable
@@ -32,13 +33,17 @@ internal fun UploadFilesCard(
     onFilesPicked: (List<Uri>) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val suppressReopen = LocalSuppressReopen.current
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
         onResult = onFilesPicked
     )
 
     Surface(
-        onClick = { picker.launch(arrayOf("*/*")) },
+        onClick = {
+            suppressReopen(true)
+            picker.launch(arrayOf("*/*"))
+        },
         enabled = enabled,
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
