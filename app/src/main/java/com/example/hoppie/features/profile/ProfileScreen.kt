@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -22,48 +23,148 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.hoppie.R
 import com.example.hoppie.core.theme.HOPPIETheme
+import com.example.hoppie.data.repository.ProfileStorageFormatter
+import com.example.hoppie.features.profile.components.AboutHoppieDialog
+import com.example.hoppie.features.profile.components.AppSettingsDialog
 import com.example.hoppie.features.profile.components.EditDeviceNameDialog
+import com.example.hoppie.features.profile.components.PermissionsStatusDialog
 import com.example.hoppie.features.profile.components.ProfileHeader
 import com.example.hoppie.features.profile.components.ProfileIdentitySection
 import com.example.hoppie.features.profile.components.ProfileSettingItem
 import com.example.hoppie.features.profile.components.ProfileSettingsCard
+import com.example.hoppie.features.profile.components.SaveLocationDialog
+import com.example.hoppie.features.profile.components.StorageBreakdownDialog
 
-private val ProfileScreenBackground = Color(0xFFF7F9FC)
+private val ProfileScreenBackground = Color(0xFFF6F8FC)
+
+private enum class ActiveProfileDialog {
+    EditDeviceName,
+    SaveLocation,
+    StorageBreakdown,
+    AppSettings,
+    Permissions,
+    AboutHoppie
+}
 
 @Composable
-internal fun ProfileScreen() {
+internal fun ProfileScreen(viewModel: ProfileViewModel = viewModel()) {
     val context = LocalContext.current
-    val defaults = ProfileUiState()
-    var deviceName by rememberSaveable { mutableStateOf(defaults.deviceName) }
-    var showEditNameDialog by rememberSaveable { mutableStateOf(false) }
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var activeDialog by rememberSaveable { mutableStateOf<ActiveProfileDialog?>(null) }
 
-    fun showComingSoon(label: String) {
-        Toast.makeText(context, "$label coming soon", Toast.LENGTH_SHORT).show()
+    LaunchedEffect(Unit) {
+        viewModel.refreshStorage()
     }
 
+    ProfileScreenContent(
+        state = state,
+        onEditDeviceName = { activeDialog = ActiveProfileDialog.EditDeviceName },
+        onOpenSaveLocation = { activeDialog = ActiveProfileDialog.SaveLocation },
+        onOpenStorage = {
+            viewModel.refreshStorage()
+            activeDialog = ActiveProfileDialog.StorageBreakdown
+        },
+        onOpenAppSettings = { activeDialog = ActiveProfileDialog.AppSettings },
+        onOpenPermissions = { activeDialog = ActiveProfileDialog.Permissions },
+        onOpenAbout = { activeDialog = ActiveProfileDialog.AboutHoppie }
+    )
+
+    when (activeDialog) {
+        ActiveProfileDialog.EditDeviceName -> EditDeviceNameDialog(
+            currentName = state.deviceName,
+            onDismiss = { activeDialog = null },
+            onSave = { updated ->
+                if (viewModel.updateDeviceName(updated)) {
+                    activeDialog = null
+                }
+            }
+        )
+
+        ActiveProfileDialog.SaveLocation -> SaveLocationDialog(
+            currentPath = state.saveLocation,
+            onDismiss = { activeDialog = null },
+            onSave = { updated ->
+                if (viewModel.updateSaveLocation(updated)) {
+                    activeDialog = null
+                }
+            },
+            onResetDefault = {
+                viewModel.resetSaveLocation()
+                Toast.makeText(context, "Save location reset to default", Toast.LENGTH_SHORT).show()
+            }
+        )
+
+        ActiveProfileDialog.StorageBreakdown -> StorageBreakdownDialog(
+            usage = state.storageUsage,
+            saveLocation = state.saveLocation,
+            onClearPreviewCache = {
+                viewModel.clearPreviewCache { cleared ->
+                    Toast.makeText(
+                        context,
+                        "Cleared ${ProfileStorageFormatter.formatBytes(cleared)} of cached previews",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            },
+            onDismiss = { activeDialog = null }
+        )
+
+        ActiveProfileDialog.AppSettings -> AppSettingsDialog(
+            autoSkipDuplicates = state.autoSkipDuplicates,
+            autoCachePreviews = state.autoCachePreviews,
+            onToggleAutoSkipDuplicates = viewModel::setAutoSkipDuplicates,
+            onToggleAutoCachePreviews = viewModel::setAutoCachePreviews,
+            onDismiss = { activeDialog = null }
+        )
+
+        ActiveProfileDialog.Permissions -> PermissionsStatusDialog(
+            onDismiss = { activeDialog = null }
+        )
+
+        ActiveProfileDialog.AboutHoppie -> AboutHoppieDialog(
+            appVersion = state.appVersion,
+            onDismiss = { activeDialog = null }
+        )
+
+        null -> Unit
+    }
+}
+
+@Composable
+internal fun ProfileScreenContent(
+    state: ProfileUiState,
+    onEditDeviceName: () -> Unit,
+    onOpenSaveLocation: () -> Unit,
+    onOpenStorage: () -> Unit,
+    onOpenAppSettings: () -> Unit,
+    onOpenPermissions: () -> Unit,
+    onOpenAbout: () -> Unit
+) {
     val deviceSettings = listOf(
         ProfileSettingItem(
             title = "Device Name",
-            subtitle = deviceName,
+            subtitle = state.deviceName,
             iconRes = R.drawable.phone_icon,
             iconSize = 26.dp,
-            onClick = { showEditNameDialog = true }
+            onClick = onEditDeviceName
         ),
         ProfileSettingItem(
             title = "Save Location",
-            subtitle = defaults.saveLocation,
+            subtitle = state.saveLocation,
             iconRes = R.drawable.ic_profile_folder,
             iconSize = 24.dp,
-            onClick = { showComingSoon("Save Location") }
+            onClick = onOpenSaveLocation
         ),
         ProfileSettingItem(
             title = "Storage",
-            subtitle = defaults.storageSummary,
+            subtitle = state.storageSummary,
             iconRes = R.drawable.ic_profile_storage,
             iconSize = 24.dp,
-            onClick = { showComingSoon("Storage") }
+            onClick = onOpenStorage
         )
     )
 
@@ -72,20 +173,20 @@ internal fun ProfileScreen() {
             title = "App Settings",
             iconRes = R.drawable.settings_icon,
             iconSize = 28.dp,
-            onClick = { showComingSoon("App Settings") }
+            onClick = onOpenAppSettings
         ),
         ProfileSettingItem(
             title = "Permissions",
             iconRes = R.drawable.ic_profile_shield_check,
             iconSize = 24.dp,
-            onClick = { showComingSoon("Permissions") }
+            onClick = onOpenPermissions
         ),
         ProfileSettingItem(
             title = "About Hoppie",
-            subtitle = defaults.appVersion,
+            subtitle = state.appVersion,
             iconRes = R.drawable.info_icon,
             iconSize = 32.dp,
-            onClick = { showComingSoon("About Hoppie") }
+            onClick = onOpenAbout
         )
     )
 
@@ -106,9 +207,9 @@ internal fun ProfileScreen() {
             ProfileHeader()
             Spacer(Modifier.height(14.dp))
             ProfileIdentitySection(
-                deviceName = deviceName,
-                deviceSubtitle = defaults.deviceSubtitle,
-                onEditDeviceName = { showEditNameDialog = true }
+                deviceName = state.deviceName,
+                deviceSubtitle = state.deviceSubtitle,
+                onEditDeviceName = onEditDeviceName
             )
             Spacer(Modifier.height(22.dp))
             ProfileSettingsCard(items = deviceSettings)
@@ -117,23 +218,20 @@ internal fun ProfileScreen() {
             Spacer(Modifier.height(20.dp))
         }
     }
-
-    if (showEditNameDialog) {
-        EditDeviceNameDialog(
-            currentName = deviceName,
-            onDismiss = { showEditNameDialog = false },
-            onSave = { updatedName ->
-                deviceName = updatedName
-                showEditNameDialog = false
-            }
-        )
-    }
 }
 
 @Preview(showBackground = true)
 @Composable
 private fun ProfileScreenPreview() {
     HOPPIETheme {
-        ProfileScreen()
+        ProfileScreenContent(
+            state = sampleProfilePreviewState,
+            onEditDeviceName = {},
+            onOpenSaveLocation = {},
+            onOpenStorage = {},
+            onOpenAppSettings = {},
+            onOpenPermissions = {},
+            onOpenAbout = {}
+        )
     }
 }
