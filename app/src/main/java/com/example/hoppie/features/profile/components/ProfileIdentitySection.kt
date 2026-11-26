@@ -18,7 +18,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -30,8 +29,6 @@ import com.example.hoppie.R
 import com.example.hoppie.core.theme.HoppieFileSize
 import com.example.hoppie.core.theme.HoppiePurple
 
-private val AvatarSoftBlueTop = Color(0xFFD0E2FC)
-private val AvatarSoftBlueBottom = Color(0xFFB5CEF7)
 private val EditButtonFill = Color(0xFFF3F7FD)
 private val EditButtonBorder = Color(0xFFDDE6F4)
 
@@ -46,26 +43,12 @@ internal fun ProfileIdentitySection(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(
-            modifier = Modifier
-                .size(124.dp)
-                .clip(CircleShape)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(AvatarSoftBlueTop, AvatarSoftBlueBottom)
-                    )
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Image(
-                painter = painterResource(R.drawable.hoppie_head),
-                contentDescription = "Hoppie device avatar",
-                modifier = Modifier
-                    .size(106.dp)
-                    .padding(top = 4.dp),
-                contentScale = ContentScale.Fit
-            )
-        }
+        Image(
+            painter = painterResource(R.drawable.hoppie_profile),
+            contentDescription = "Hoppie device avatar",
+            modifier = Modifier.size(132.dp),
+            contentScale = ContentScale.Fit
+        )
 
         Spacer(Modifier.height(14.dp))
 
